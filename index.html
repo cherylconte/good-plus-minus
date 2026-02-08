@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Base-10 Addition/Subtraction with Regrouping</title>
+
+<style>
+body {
+  font-family: Arial, sans-serif;
+  margin:0;
+  padding:0;
+  background: #f9f9f9;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  min-height:100vh;
+}
+
+h2 { margin:20px 0; }
+
+#controls {
+  margin-bottom:20px;
+  display:flex;
+  gap:10px;
+  flex-wrap:wrap;
+  justify-content:center;
+}
+
+input, button, select {
+  font-size:16px;
+  padding:5px 10px;
+}
+
+#availableBlocks {
+  margin-bottom:20px;
+  display:flex;
+  gap:10px;
+}
+
+.block {
+  cursor:pointer;
+  user-select:none;
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  font-weight:bold;
+  color:#fff;
+  border-radius:4px;
+}
+
+.flat { width:200px; height:200px; }
+.rod  { width:20px; height:200px; }
+.unit { width:20px; height:20px; }
+
+/* COLORS BY NUMBER */
+.row1 .flat { background:#1e88e5; }
+.row1 .rod  { background:#1e88e5; }
+.row1 .unit { background:#1e88e5; }
+
+.row2 .flat { background:#e53935; }
+.row2 .rod  { background:#e53935; }
+.row2 .unit { background:#e53935; }
+
+#board {
+  display:flex;
+  gap:20px;
+  border:2px solid #333;
+  background:#fff;
+  padding:20px 10px 60px;
+  min-width:90vw;
+}
+
+.column {
+  flex:1;
+  position:relative;
+  border-left:1px solid #333;
+  min-height:260px;
+  padding-top:30px;
+}
+
+.column:first-child { border-left:none; }
+
+.column-label {
+  position:absolute;
+  top:0;
+  width:100%;
+  text-align:center;
+  font-weight:bold;
+}
+
+.row-blocks {
+  display:flex;
+  flex-wrap:wrap;
+  gap:5px;
+  margin-bottom:8px;
+}
+
+#equation {
+  margin-top:40px;
+  font-size:40px;
+}
+</style>
+</head>
+
+<body>
+
+<h2>Base-10 Addition / Subtraction</h2>
+
+<div id="controls">
+  <label>Problem:
+    <input type="text" id="problemInput" value="246 + 175">
+  </label>
+  <button id="setup">Set Up</button>
+  <button id="switchRow">Switch Number</button>
+</div>
+
+<div id="availableBlocks">
+  <div class="block flat">100</div>
+  <div class="block rod">10</div>
+  <div class="block unit">1</div>
+</div>
+
+<div id="board">
+  <div class="column" id="hundredsCol">
+    <div class="column-label">Hundreds</div>
+  </div>
+  <div class="column" id="tensCol">
+    <div class="column-label">Tens</div>
+  </div>
+  <div class="column" id="onesCol">
+    <div class="column-label">Ones</div>
+  </div>
+</div>
+
+<div id="equation"></div>
+
+<script>
+const problemInput = document.getElementById('problemInput');
+const setupBtn = document.getElementById('setup');
+const switchRowBtn = document.getElementById('switchRow');
+const availableBlocks = document.querySelectorAll('#availableBlocks .block');
+const equation = document.getElementById('equation');
+
+const cols = {
+  flat: document.getElementById('hundredsCol'),
+  rod: document.getElementById('tensCol'),
+  unit: document.getElementById('onesCol')
+};
+
+let currentRow = 1;
+
+// Clear board
+function clearBoard() {
+  Object.values(cols).forEach(col => {
+    const label = col.querySelector('.column-label').outerHTML;
+    col.innerHTML = label;
+  });
+}
+
+// Get or create row container
+function getRow(col) {
+  let row = col.querySelector(`.row${currentRow}`);
+  if (!row) {
+    row = document.createElement('div');
+    row.className = `row-blocks row${currentRow}`;
+    col.appendChild(row);
+  }
+  return row;
+}
+
+// Add block
+function addBlock(type) {
+  const block = document.createElement('div');
+  block.className = `block ${type}`;
+  const row = getRow(cols[type]);
+  row.appendChild(block);
+
+  block.draggable = true;
+  block.addEventListener('dragstart', e => {
+    e.dataTransfer.setData('type', type);
+    e.dataTransfer.setData('row', currentRow);
+  });
+}
+
+// Regroup logic
+Object.entries(cols).forEach(([type, col]) => {
+  col.addEventListener('dragover', e => e.preventDefault());
+
+  col.addEventListener('drop', e => {
+    e.preventDefault();
+    const fromType = e.dataTransfer.getData('type');
+    const row = e.dataTransfer.getData('row');
+    const targetType =
+      col.id === 'hundredsCol' ? 'flat' :
+      col.id === 'tensCol' ? 'rod' : 'unit';
+
+    if (fromType === targetType) return;
+
+    const fromCol = cols[fromType];
+    const rowDiv = fromCol.querySelector(`.row${row}`);
+    if (!rowDiv) return;
+
+    const blocks = rowDiv.querySelectorAll(`.${fromType}`);
+
+    if (fromType === 'unit' && targetType === 'rod' && blocks.length >= 10) {
+      for (let i = 0; i < 10; i++) blocks[i].remove();
+      addBlock('rod');
+    }
+
+    if (fromType === 'rod' && targetType === 'unit' && blocks.length >= 1) {
+      blocks[0].remove();
+      for (let i = 0; i < 10; i++) addBlock('unit');
+    }
+
+    if (fromType === 'rod' && targetType === 'flat' && blocks.length >= 10) {
+      for (let i = 0; i < 10; i++) blocks[i].remove();
+      addBlock('flat');
+    }
+
+    if (fromType === 'flat' && targetType === 'rod' && blocks.length >= 1) {
+      blocks[0].remove();
+      for (let i = 0; i < 10; i++) addBlock('rod');
+    }
+  });
+});
+
+// Palette clicks
+availableBlocks.forEach(b => {
+  b.addEventListener('click', () => {
+    const type = b.classList.contains('flat') ? 'flat'
+               : b.classList.contains('rod') ? 'rod'
+               : 'unit';
+    addBlock(type);
+  });
+});
+
+// Setup
+setupBtn.addEventListener('click', () => {
+  clearBoard();
+  currentRow = 1;
+  const problem = problemInput.value.trim().replace('-', ' − ');
+  equation.innerText = problem + ' = ____';
+});
+
+// Switch number
+switchRowBtn.addEventListener('click', () => {
+  currentRow = currentRow === 1 ? 2 : 1;
+});
+</script>
+
+</body>
+</html>
