@@ -20,6 +20,11 @@ input, button {
   padding:5px 10px;
 }
 
+/* ✅ SCALE CONTROL */
+:root {
+  --scale: 0.6;
+}
+
 #availableBlocks {
   display:flex;
   justify-content:center;
@@ -34,12 +39,23 @@ input, button {
   border-radius:4px;
 }
 
-/* SIZES */
-.flat { width:200px; height:200px; }
-.rod  { width:20px; height:200px; }
-.unit { width:20px; height:20px; }
+/* SCALED SIZES */
+.flat {
+  width: calc(200px * var(--scale));
+  height: calc(200px * var(--scale));
+}
 
-/* PALETTE COLOR */
+.rod {
+  width: calc(20px * var(--scale));
+  height: calc(200px * var(--scale));
+}
+
+.unit {
+  width: calc(20px * var(--scale));
+  height: calc(20px * var(--scale));
+}
+
+/* PALETTE */
 .palette {
   background:#9e9e9e;
 }
@@ -96,6 +112,7 @@ input, button {
   <input id="problemInput" value="246 + 175">
   <button id="setup">Set Up</button>
   <button id="switchRow">Switch Number</button>
+  <button id="undo">Undo</button>
 </div>
 
 <div id="availableBlocks">
@@ -127,12 +144,16 @@ const cols = {
 
 let currentRow = 1;
 
+/* ✅ HISTORY STACK */
+let history = [];
+
 // Clear board
 function clearBoard() {
   Object.values(cols).forEach(col => {
     const label = col.querySelector('.column-label').outerHTML;
     col.innerHTML = label;
   });
+  history = [];
 }
 
 // Get or create row
@@ -146,20 +167,36 @@ function getRow(col) {
   return row;
 }
 
-// Add block
-function addBlock(type) {
+/* ✅ ADD BLOCK (tracks history) */
+function addBlock(type, track = true) {
   const block = document.createElement('div');
   block.className = `block ${type}`;
-  getRow(cols[type]).appendChild(block);
+
+  const rowDiv = getRow(cols[type]);
+  rowDiv.appendChild(block);
+
+  if (track) {
+    history.push({
+      action: "add",
+      blocks: [block]
+    });
+  }
 
   block.draggable = true;
   block.addEventListener('dragstart', e => {
     e.dataTransfer.setData('type', type);
     e.dataTransfer.setData('row', currentRow);
   });
+
+  return block;
 }
 
-// Palette clicks
+/* ✅ REMOVE BLOCKS */
+function removeBlocks(blocks) {
+  blocks.forEach(b => b.remove());
+}
+
+/* PALETTE */
 document.querySelectorAll('.palette').forEach(b => {
   b.addEventListener('click', () => {
     const type = b.classList.contains('flat') ? 'flat'
@@ -168,13 +205,16 @@ document.querySelectorAll('.palette').forEach(b => {
   });
 });
 
-// Regrouping
+/* ✅ REGROUPING WITH SMART HISTORY */
 Object.entries(cols).forEach(([type, col]) => {
   col.addEventListener('dragover', e => e.preventDefault());
+
   col.addEventListener('drop', e => {
     e.preventDefault();
+
     const fromType = e.dataTransfer.getData('type');
     const row = e.dataTransfer.getData('row');
+
     const targetType =
       col.id === 'hundredsCol' ? 'flat' :
       col.id === 'tensCol' ? 'rod' : 'unit';
@@ -185,31 +225,97 @@ Object.entries(cols).forEach(([type, col]) => {
     const rowDiv = fromCol.querySelector(`.row${row}`);
     if (!rowDiv) return;
 
-    const blocks = rowDiv.querySelectorAll(`.${fromType}`);
+    const blocks = [...rowDiv.querySelectorAll(`.${fromType}`)];
 
+    /* UNIT → ROD */
     if (fromType === 'unit' && targetType === 'rod' && blocks.length >= 10) {
-      for (let i = 0; i < 10; i++) blocks[i].remove();
-      addBlock('rod');
+      const removed = blocks.slice(0, 10);
+      removeBlocks(removed);
+
+      const newBlock = addBlock('rod', false);
+
+      history.push({
+        action: "regroup",
+        removed,
+        added: [newBlock]
+      });
     }
 
+    /* ROD → UNIT */
     if (fromType === 'rod' && targetType === 'unit') {
-      blocks[0]?.remove();
-      for (let i = 0; i < 10; i++) addBlock('unit');
+      const removed = [blocks[0]];
+      removeBlocks(removed);
+
+      const added = [];
+      for (let i = 0; i < 10; i++) {
+        added.push(addBlock('unit', false));
+      }
+
+      history.push({
+        action: "regroup",
+        removed,
+        added
+      });
     }
 
+    /* ROD → FLAT */
     if (fromType === 'rod' && targetType === 'flat' && blocks.length >= 10) {
-      for (let i = 0; i < 10; i++) blocks[i].remove();
-      addBlock('flat');
+      const removed = blocks.slice(0, 10);
+      removeBlocks(removed);
+
+      const newBlock = addBlock('flat', false);
+
+      history.push({
+        action: "regroup",
+        removed,
+        added: [newBlock]
+      });
     }
 
+    /* FLAT → ROD */
     if (fromType === 'flat' && targetType === 'rod') {
-      blocks[0]?.remove();
-      for (let i = 0; i < 10; i++) addBlock('rod');
+      const removed = [blocks[0]];
+      removeBlocks(removed);
+
+      const added = [];
+      for (let i = 0; i < 10; i++) {
+        added.push(addBlock('rod', false));
+      }
+
+      history.push({
+        action: "regroup",
+        removed,
+        added
+      });
     }
   });
 });
 
-// Setup
+/* ✅ SMART UNDO */
+document.getElementById('undo').onclick = () => {
+  const last = history.pop();
+  if (!last) return;
+
+  if (last.action === "add") {
+    removeBlocks(last.blocks);
+  }
+
+  if (last.action === "regroup") {
+    // remove what was added
+    removeBlocks(last.added);
+
+    // restore what was removed
+    last.removed.forEach(block => {
+      const type =
+        block.classList.contains('flat') ? 'flat' :
+        block.classList.contains('rod') ? 'rod' : 'unit';
+
+      const restored = addBlock(type, false);
+    });
+  }
+};
+
+/* SETUP */
 document.getElementById('setup').onclick = () => {
   clearBoard();
   currentRow = 1;
@@ -217,7 +323,7 @@ document.getElementById('setup').onclick = () => {
     document.getElementById('problemInput').value + " = ____";
 };
 
-// Switch number
+/* SWITCH ROW */
 document.getElementById('switchRow').onclick = () => {
   currentRow = currentRow === 1 ? 2 : 1;
 };
@@ -225,4 +331,3 @@ document.getElementById('switchRow').onclick = () => {
 
 </body>
 </html>
-
